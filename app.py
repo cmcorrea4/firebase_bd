@@ -1,9 +1,3 @@
-exito, mensaje = eliminar_archivo(cliente_ver_id, i)
-                                                    if exito:
-                                                        st.success(mensaje)
-                                                        st.experimental_rerun()
-                                                    else:
-                                                        st.error(mensaje)import streamlit as st
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
