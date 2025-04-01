@@ -582,7 +582,7 @@ with tab4:
                                 "instructor": instructor,
                                 "ubicacion": ubicacion,
                                 "detalles": detalles_capacitacion,
-                                "fecha_registro": datetime.now()
+                                "fecha_registro": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                             }
                             
                             # Obtener referencia al documento del cliente
