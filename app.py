@@ -122,7 +122,7 @@ else:
 st.empty()
 
 # Título de la aplicación
-st.title("🏢 Gestor de Clientes con Firebase")
+st.title("🏢 Gestor de Clientes con Empresa Viva")
 
 # Función para obtener todos los clientes
 def obtener_clientes():
