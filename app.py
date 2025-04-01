@@ -15,9 +15,56 @@ def inicializar_firebase():
     if not firebase_admin._apps:
         try:
             # Usar st.secrets para las credenciales de Firebase
-            key_dict = st.secrets["firebase"]
-            cred = credentials.Certificate(key_dict)
-            firebase_admin.initialize_app(cred)
+            # Convertir de cadena a diccionario si es necesario
+            import json
+            import ast
+            
+            try:
+                # Primero intentamos obtener el diccionario directamente
+                key_dict = st.secrets["firebase"]
+                
+                # Si key_dict es una cadena (lo que parece estar ocurriendo), la convertimos a diccionario
+                if isinstance(key_dict, str):
+                    try:
+                        # Intentar convertir usando json.loads
+                        key_dict = json.loads(key_dict)
+                    except json.JSONDecodeError:
+                        # Si falla, intentar con ast.literal_eval
+                        key_dict = ast.literal_eval(key_dict)
+                
+                # Verificar si tenemos todas las claves necesarias
+                required_keys = ['type', 'project_id', 'private_key', 'client_email']
+                if not all(k in key_dict for k in required_keys):
+                    st.error("Las credenciales de Firebase no contienen todas las claves necesarias")
+                    return None
+                
+                cred = credentials.Certificate(key_dict)
+                firebase_admin.initialize_app(cred)
+            except Exception as e:
+                st.error(f"Error al procesar credenciales: {e}")
+                
+                # Alternativa: usar credenciales individuales
+                st.info("Intentando método alternativo con credenciales individuales...")
+                try:
+                    cred_info = {
+                        "type": st.secrets["firebase"]["type"],
+                        "project_id": st.secrets["firebase"]["project_id"],
+                        "private_key_id": st.secrets["firebase"]["private_key_id"],
+                        "private_key": st.secrets["firebase"]["private_key"],
+                        "client_email": st.secrets["firebase"]["client_email"],
+                        "client_id": st.secrets["firebase"]["client_id"],
+                        "auth_uri": st.secrets["firebase"]["auth_uri"],
+                        "token_uri": st.secrets["firebase"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
+                        "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"],
+                        "universe_domain": st.secrets["firebase"]["universe_domain"]
+                    }
+                    cred = credentials.Certificate(cred_info)
+                    firebase_admin.initialize_app(cred)
+                except Exception as e2:
+                    st.error(f"Error en método alternativo: {e2}")
+                    return None
+                
         except Exception as e:
             st.error(f"Error al inicializar Firebase: {e}")
             st.error("Asegúrate de configurar los secretos en Streamlit Cloud")
@@ -250,7 +297,7 @@ with st.sidebar:
     """)
     
     st.code("""
-# Ejemplo de estructura para st.secrets["firebase"]
+# Opción 1: Archivo .streamlit/secrets.toml
 [firebase]
 type = "service_account"
 project_id = "tu-proyecto-id"
@@ -265,7 +312,9 @@ token_uri = "https://oauth2.googleapis.com/token"
 auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
 client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 universe_domain = "googleapis.com"
-    """)
+"""")
+    
+    st.info("Si estás teniendo problemas con el formato TOML, puedes probar con el formato JSO
 
     # Verificar si los secretos están configurados
     if conexion_exitosa:
