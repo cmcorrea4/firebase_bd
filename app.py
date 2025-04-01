@@ -4,7 +4,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 from firebase_admin import storage
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 import base64
@@ -26,24 +26,12 @@ def inicializar_firebase():
                     # Obtener credenciales de st.secrets
                     firebase_secrets = st.secrets["firebase"]
                     
-                    # Crear diccionario de credenciales
-                    cred_dict = {
-                        "type": firebase_secrets["type"],
-                        "project_id": firebase_secrets["project_id"],
-                        "private_key_id": firebase_secrets["private_key_id"],
-                        "private_key": firebase_secrets["private_key"].replace('\\n', '\n'),
-                        "client_email": firebase_secrets["client_email"],
-                        "client_id": firebase_secrets["client_id"],
-                        "auth_uri": firebase_secrets["auth_uri"],
-                        "token_uri": firebase_secrets["token_uri"],
-                        "auth_provider_x509_cert_url": firebase_secrets["auth_provider_x509_cert_url"],
-                        "client_x509_cert_url": firebase_secrets["client_x509_cert_url"],
-                        "universe_domain": firebase_secrets["universe_domain"]
-                    }
+                    # Obtener el proyecto de Firebase desde las credenciales
+                    project_id = cred_dict['project_id']
                     
-                    cred = credentials.Certificate(cred_dict)
+                    # Inicializar la aplicación de Firebase con Storage
                     firebase_admin.initialize_app(cred, {
-                        'storageBucket': f"{firebase_secrets['project_id']}.appspot.com"
+                        'storageBucket': f"{project_id}.appspot.com"
                     })
                 except Exception as e:
                     st.error(f"Error con credenciales locales: {e}")
@@ -154,21 +142,34 @@ def obtener_clientes():
 # Función para subir archivo PDF a Firebase Storage
 def subir_archivo(cliente_id, archivo, descripcion):
     try:
+        # Imprimir información de diagnóstico
+        st.write(f"Iniciando carga de archivo: {archivo.name}")
+        st.write(f"Bucket disponible: {bucket.name if bucket else 'No hay bucket disponible'}")
+        
         # Generar nombre único para el archivo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nombre_archivo = f"{cliente_id}/{timestamp}_{archivo.name}"
+        nombre_archivo = f"clientes/{cliente_id}/{timestamp}_{archivo.name}"
         
         # Referencia al archivo en Storage
         blob = bucket.blob(nombre_archivo)
         
-        # Subir archivo
-        blob.upload_from_file(archivo, content_type="application/pdf")
+        # Leer el contenido del archivo en memoria
+        archivo_bytes = archivo.read()
         
-        # Hacer público el archivo (opcional, depende de tus necesidades de seguridad)
-        blob.make_public()
+        st.write(f"Tamaño del archivo: {len(archivo_bytes)} bytes")
         
-        # Obtener URL del archivo
-        url_archivo = blob.public_url
+        # Subir el contenido del archivo desde memoria
+        blob.upload_from_string(
+            archivo_bytes,
+            content_type="application/pdf"
+        )
+        
+        # Hacer público el archivo con un tiempo de expiración (7 días)
+        # Nota: en producción, considera usar tokens firmados en lugar de hacer público
+        expiracion = datetime.now() + timedelta(days=7)
+        url_archivo = blob.generate_signed_url(expiration=expiracion)
+        
+        st.write(f"Archivo subido correctamente a: {nombre_archivo}")
         
         # Crear registro del archivo en Firestore
         archivo_data = {
@@ -176,7 +177,8 @@ def subir_archivo(cliente_id, archivo, descripcion):
             "descripcion": descripcion,
             "url": url_archivo,
             "ruta_storage": nombre_archivo,
-            "fecha_subida": datetime.now()
+            "fecha_subida": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "expira": expiracion.strftime("%d/%m/%Y %H:%M:%S")
         }
         
         # Obtener referencia al documento del cliente
@@ -196,11 +198,17 @@ def subir_archivo(cliente_id, archivo, descripcion):
             # Actualizar el documento en Firestore
             doc_ref.update({"archivos": archivos})
             
+            # Limpiar mensajes de diagnóstico
+            st.empty()
+            
             return True, "Archivo subido exitosamente"
         else:
             return False, "No se encontró el cliente seleccionado"
             
     except Exception as e:
+        st.error(f"Error detallado: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return False, f"Error al subir archivo: {str(e)}"
 
 # Función para eliminar archivo de Firebase Storage
