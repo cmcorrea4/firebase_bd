@@ -386,39 +386,41 @@ with tab2:
                         
                         # Mostrar capacitaciones si existen
                         if "capacitaciones" in cliente_seleccionado and cliente_seleccionado["capacitaciones"]:
-                            with st.expander("🎓 Capacitaciones realizadas"):
-                                # Asegurarse de que las capacitaciones son una lista
-                                capacitaciones = cliente_seleccionado["capacitaciones"]
-                                if not isinstance(capacitaciones, list):
-                                    st.error("Error: El formato de capacitaciones no es válido.")
-                                else:
-                                    for cap in capacitaciones:
-                                        try:
-                                            st.write(f"- **{cap.get('nombre', 'Sin nombre')}** ({cap.get('fecha', 'Sin fecha')})")
-                                            st.write(f"  Estado: {cap.get('estado', 'No especificado')}")
-                                            if cap.get('detalles'):
-                                                st.write(f"  Detalles: {cap.get('detalles')}")
-                                            st.write("---")
-                                        except Exception as e:
-                                            st.error(f"Error al mostrar capacitación: {e}")
-                                            st.write("---")
+                            st.write("🎓 **Capacitaciones realizadas:**")
+                            # Asegurarse de que las capacitaciones son una lista
+                            capacitaciones = cliente_seleccionado["capacitaciones"]
+                            if not isinstance(capacitaciones, list):
+                                st.error("Error: El formato de capacitaciones no es válido.")
+                            else:
+                                for cap in capacitaciones:
+                                    try:
+                                        st.write(f"- **{cap.get('nombre', 'Sin nombre')}** ({cap.get('fecha', 'Sin fecha')})")
+                                        st.write(f"  Estado: {cap.get('estado', 'No especificado')}")
+                                        if cap.get('detalles'):
+                                            st.write(f"  Detalles: {cap.get('detalles')}")
+                                        st.write("---")
+                                    except Exception as e:
+                                        st.error(f"Error al mostrar capacitación: {e}")
+                                        st.write("---")
                         
                         # Mostrar archivos si existen
                         if "archivos" in cliente_seleccionado and cliente_seleccionado["archivos"]:
-                            with st.expander("📁 Archivos del cliente"):
-                                for archivo in cliente_seleccionado["archivos"]:
-                                    col_arch1, col_arch2 = st.columns([3, 1])
-                                    with col_arch1:
-                                        st.write(f"**{archivo.get('nombre', 'Sin nombre')}**")
-                                        st.write(f"Descripción: {archivo.get('descripcion', 'Sin descripción')}")
-                                        if archivo.get('fecha_subida') and isinstance(archivo.get('fecha_subida'), datetime):
-                                            st.write(f"Subido: {archivo.get('fecha_subida').strftime('%d/%m/%Y %H:%M')}")
-                                    
-                                    with col_arch2:
-                                        if archivo.get('url'):
-                                            st.markdown(f"[Descargar PDF]({archivo.get('url')})")
-                                    
-                                    st.write("---")
+                            st.write("📁 **Archivos del cliente:**")
+                            for archivo in cliente_seleccionado["archivos"]:
+                                col_arch1, col_arch2 = st.columns([3, 1])
+                                with col_arch1:
+                                    st.write(f"**{archivo.get('nombre', 'Sin nombre')}**")
+                                    st.write(f"Descripción: {archivo.get('descripcion', 'Sin descripción')}")
+                                    if archivo.get('fecha_subida') and isinstance(archivo.get('fecha_subida'), datetime):
+                                        st.write(f"Subido: {archivo.get('fecha_subida').strftime('%d/%m/%Y %H:%M')}")
+                                    elif archivo.get('fecha_subida'):
+                                        st.write(f"Subido: {archivo.get('fecha_subida')}")
+                                
+                                with col_arch2:
+                                    if archivo.get('url'):
+                                        st.markdown(f"[Descargar PDF]({archivo.get('url')})")
+                                
+                                st.write("---")
                         
                         # Botón para eliminar
                         if st.button("🗑️ Eliminar cliente", key="del_btn"):
