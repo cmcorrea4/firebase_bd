@@ -296,15 +296,15 @@ with st.sidebar:
     4. Configura estos datos como secretos en Streamlit Cloud
     """)
     
-    st.code("""
-# Opción 1: Archivo .streamlit/secrets.toml
+    st.write("#### Opción 1: Archivo .streamlit/secrets.toml")
+    toml_ejemplo = """
 [firebase]
 type = "service_account"
 project_id = "tu-proyecto-id"
 private_key_id = "tu-private-key-id"
-private_key = \"\"\"-----BEGIN PRIVATE KEY-----
+private_key = '''-----BEGIN PRIVATE KEY-----
 tu-clave-privada
------END PRIVATE KEY-----\"\"\"
+-----END PRIVATE KEY-----'''
 client_email = "firebase-adminsdk@tu-proyecto.iam.gserviceaccount.com"
 client_id = "tu-client-id"
 auth_uri = "https://accounts.google.com/o/oauth2/auth"
@@ -312,12 +312,11 @@ token_uri = "https://oauth2.googleapis.com/token"
 auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
 client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 universe_domain = "googleapis.com"
-"""")
+"""
+    st.code(toml_ejemplo)
     
-    st.info("Si estás teniendo problemas con el formato TOML, puedes probar con el formato JSON en Streamlit Cloud:")
-    
-    st.code("""
-# Opción 2: JSON en Streamlit Cloud (Secretos)
+    st.write("#### Opción 2: JSON en Streamlit Cloud (Secretos)")
+    json_ejemplo = """
 {
   "firebase": {
     "type": "service_account",
@@ -333,7 +332,8 @@ universe_domain = "googleapis.com"
     "universe_domain": "googleapis.com"
   }
 }
-""")
+"""
+    st.code(json_ejemplo)
 
     # Verificar si los secretos están configurados
     if conexion_exitosa:
