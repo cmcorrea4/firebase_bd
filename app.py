@@ -4,82 +4,107 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 import pandas as pd
 from datetime import datetime
+import json
+import os
 
 # Configuración de la página
 st.set_page_config(page_title="Gestor de Contactos con Firebase", page_icon="📞", layout="wide")
 
-# Inicializar Firebase usando st.secrets (para Streamlit Cloud)
+# Función para inicializar Firebase de forma segura
 @st.cache_resource
 def inicializar_firebase():
-    # Verifica si Firebase ya está inicializado
     if not firebase_admin._apps:
         try:
-            # Usar st.secrets para las credenciales de Firebase
-            # Convertir de cadena a diccionario si es necesario
-            import json
-            import ast
-            
-            try:
-                # Primero intentamos obtener el diccionario directamente
-                key_dict = st.secrets["firebase"]
-                
-                # Si key_dict es una cadena (lo que parece estar ocurriendo), la convertimos a diccionario
-                if isinstance(key_dict, str):
-                    try:
-                        # Intentar convertir usando json.loads
-                        key_dict = json.loads(key_dict)
-                    except json.JSONDecodeError:
-                        # Si falla, intentar con ast.literal_eval
-                        key_dict = ast.literal_eval(key_dict)
-                
-                # Verificar si tenemos todas las claves necesarias
-                required_keys = ['type', 'project_id', 'private_key', 'client_email']
-                if not all(k in key_dict for k in required_keys):
-                    st.error("Las credenciales de Firebase no contienen todas las claves necesarias")
-                    return None
-                
-                cred = credentials.Certificate(key_dict)
-                firebase_admin.initialize_app(cred)
-            except Exception as e:
-                st.error(f"Error al procesar credenciales: {e}")
-                
-                # Alternativa: usar credenciales individuales
-                st.info("Intentando método alternativo con credenciales individuales...")
+            # Detectar entorno (desarrollo local o Streamlit Cloud)
+            if os.path.exists(".streamlit/secrets.toml"):
+                st.write("🔑 Usando credenciales locales")
+                # Entorno de desarrollo local con .streamlit/secrets.toml
                 try:
-                    cred_info = {
-                        "type": st.secrets["firebase"]["type"],
-                        "project_id": st.secrets["firebase"]["project_id"],
-                        "private_key_id": st.secrets["firebase"]["private_key_id"],
-                        "private_key": st.secrets["firebase"]["private_key"],
-                        "client_email": st.secrets["firebase"]["client_email"],
-                        "client_id": st.secrets["firebase"]["client_id"],
-                        "auth_uri": st.secrets["firebase"]["auth_uri"],
-                        "token_uri": st.secrets["firebase"]["token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
-                        "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"],
-                        "universe_domain": st.secrets["firebase"]["universe_domain"]
+                    # Obtener credenciales de st.secrets
+                    firebase_secrets = st.secrets["firebase"]
+                    
+                    # Crear diccionario de credenciales
+                    cred_dict = {
+                        "type": firebase_secrets["type"],
+                        "project_id": firebase_secrets["project_id"],
+                        "private_key_id": firebase_secrets["private_key_id"],
+                        "private_key": firebase_secrets["private_key"].replace('\\n', '\n'),
+                        "client_email": firebase_secrets["client_email"],
+                        "client_id": firebase_secrets["client_id"],
+                        "auth_uri": firebase_secrets["auth_uri"],
+                        "token_uri": firebase_secrets["token_uri"],
+                        "auth_provider_x509_cert_url": firebase_secrets["auth_provider_x509_cert_url"],
+                        "client_x509_cert_url": firebase_secrets["client_x509_cert_url"],
+                        "universe_domain": firebase_secrets["universe_domain"]
                     }
-                    cred = credentials.Certificate(cred_info)
+                    
+                    cred = credentials.Certificate(cred_dict)
                     firebase_admin.initialize_app(cred)
-                except Exception as e2:
-                    st.error(f"Error en método alternativo: {e2}")
+                except Exception as e:
+                    st.error(f"Error con credenciales locales: {e}")
                     return None
+            else:
+                # Entorno de Streamlit Cloud
+                st.write("☁️ Usando credenciales de Streamlit Cloud")
                 
+                # Verificar si están disponibles las variables de entorno individuales
+                if all(key in st.secrets.keys() for key in [
+                    "FIREBASE_TYPE", "FIREBASE_PROJECT_ID", "FIREBASE_PRIVATE_KEY_ID",
+                    "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL"
+                ]):
+                    # Crear diccionario de credenciales desde variables individuales
+                    cred_dict = {
+                        "type": st.secrets["FIREBASE_TYPE"],
+                        "project_id": st.secrets["FIREBASE_PROJECT_ID"],
+                        "private_key_id": st.secrets["FIREBASE_PRIVATE_KEY_ID"],
+                        "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
+                        "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
+                        "client_id": st.secrets["FIREBASE_CLIENT_ID"],
+                        "auth_uri": st.secrets["FIREBASE_AUTH_URI"],
+                        "token_uri": st.secrets["FIREBASE_TOKEN_URI"],
+                        "auth_provider_x509_cert_url": st.secrets["FIREBASE_AUTH_PROVIDER_X509_CERT_URL"],
+                        "client_x509_cert_url": st.secrets["FIREBASE_CLIENT_X509_CERT_URL"],
+                        "universe_domain": st.secrets["FIREBASE_UNIVERSE_DOMAIN"]
+                    }
+                    
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred)
+                else:
+                    # Intentar usar firebase_credentials como JSON
+                    try:
+                        json_str = st.secrets["FIREBASE_CREDENTIALS"]
+                        cred_dict = json.loads(json_str)
+                        cred = credentials.Certificate(cred_dict)
+                        firebase_admin.initialize_app(cred)
+                    except Exception as e:
+                        st.error(f"Error con credenciales JSON: {e}")
+                        
+                        # Último intento - usando firebase como clave
+                        try:
+                            firebase_dict = st.secrets["firebase"]
+                            if isinstance(firebase_dict, dict):
+                                cred = credentials.Certificate(firebase_dict)
+                            else:
+                                cred_dict = json.loads(firebase_dict)
+                                cred = credentials.Certificate(cred_dict)
+                            firebase_admin.initialize_app(cred)
+                        except Exception as e2:
+                            st.error(f"Error en último intento: {e2}")
+                            return None
+            
+            return firestore.client()
         except Exception as e:
             st.error(f"Error al inicializar Firebase: {e}")
-            st.error("Asegúrate de configurar los secretos en Streamlit Cloud")
             return None
     
     return firestore.client()
 
 # Inicializar Firestore
-try:
-    db = inicializar_firebase()
-    conexion_exitosa = db is not None
-except Exception as e:
-    st.error(f"Error al conectar con Firebase: {e}")
-    conexion_exitosa = False
-    db = None
+db = inicializar_firebase()
+conexion_exitosa = db is not None
+
+# Quitar los mensajes de depuración después de la conexión
+st.empty()
 
 # Título de la aplicación
 st.title("📋 Gestor de Contactos con Firebase")
@@ -137,7 +162,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
             else:
-                st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
+                st.error("No hay conexión con Firebase.")
 
 # Pestaña: Ver Contactos
 with tab2:
@@ -228,7 +253,7 @@ with tab2:
         except Exception as e:
             st.error(f"Error al recuperar contactos: {e}")
     else:
-        st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
+        st.error("No hay conexión con Firebase.")
 
 # Pestaña: Buscar Contactos
 with tab3:
@@ -280,68 +305,55 @@ with tab3:
             except Exception as e:
                 st.error(f"Error en la búsqueda: {e}")
     else:
-        st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
+        st.error("No hay conexión con Firebase.")
 
 # Información adicional
 with st.sidebar:
     st.title("Información")
     st.info("""
-    ## Configuración de Firebase en Streamlit Cloud
+    ## Gestor de Contactos con Firebase
     
-    Para que esta aplicación funcione en Streamlit Cloud:
+    Esta aplicación permite:
     
-    1. Crea un proyecto en [Firebase Console](https://console.firebase.google.com/)
-    2. Activa Firestore en tu proyecto
-    3. Genera una clave privada para cuenta de servicio
-    4. Configura estos datos como secretos en Streamlit Cloud
+    - Agregar contactos a Firebase
+    - Ver la lista de contactos
+    - Buscar contactos por nombre, email o ciudad
+    - Eliminar contactos
+    
+    Los datos se almacenan en Firestore (base de datos de Firebase).
     """)
     
-    st.write("#### Opción 1: Archivo .streamlit/secrets.toml")
-    toml_ejemplo = """
-[firebase]
-type = "service_account"
-project_id = "tu-proyecto-id"
-private_key_id = "tu-private-key-id"
-private_key = '''-----BEGIN PRIVATE KEY-----
-tu-clave-privada
------END PRIVATE KEY-----'''
-client_email = "firebase-adminsdk@tu-proyecto.iam.gserviceaccount.com"
-client_id = "tu-client-id"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
-universe_domain = "googleapis.com"
-"""
-    st.code(toml_ejemplo)
-    
-    st.write("#### Opción 2: JSON en Streamlit Cloud (Secretos)")
-    json_ejemplo = """
-{
-  "firebase": {
-    "type": "service_account",
-    "project_id": "tu-proyecto-id",
-    "private_key_id": "tu-private-key-id",
-    "private_key": "-----BEGIN PRIVATE KEY-----\\ntu-clave-privada\\n-----END PRIVATE KEY-----\\n",
-    "client_email": "firebase-adminsdk@tu-proyecto.iam.gserviceaccount.com",
-    "client_id": "tu-client-id",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/...",
-    "universe_domain": "googleapis.com"
-  }
-}
-"""
-    st.code(json_ejemplo)
-
-    # Verificar si los secretos están configurados
-    if conexion_exitosa:
-        st.success("✅ Conexión con Firebase establecida")
-    else:
-        st.error("❌ No se pudo conectar con Firebase")
-        st.warning("""
-        Verifica que hayas configurado correctamente los secretos en Streamlit Cloud.
+    if not conexion_exitosa:
+        st.error("""
+        ### ⚠️ Error de conexión
         
-        Para desarrollo local, crea un archivo `.streamlit/secrets.toml` con tus credenciales.
+        La aplicación no pudo conectarse a Firebase. Verifica la configuración de tus secretos en Streamlit Cloud.
+        
+        Para más información, consulta la sección de "Ayuda" a continuación.
         """)
+        
+        with st.expander("Ayuda con la configuración"):
+            st.write("""
+            ### Configuración de credenciales en Streamlit Cloud
+            
+            Para configurar las credenciales correctamente:
+            
+            1. Ve a la configuración de tu aplicación en Streamlit Cloud
+            2. En Advanced Settings > Secrets, configura tus credenciales en formato JSON
+            
+            Ejemplo:
+            ```
+            FIREBASE_CREDENTIALS = {"type": "service_account", "project_id": "tu-proyecto", ...}
+            ```
+            
+            O como variables individuales:
+            ```
+            FIREBASE_TYPE = "service_account"
+            FIREBASE_PROJECT_ID = "tu-proyecto"
+            FIREBASE_PRIVATE_KEY_ID = "tu-private-key-id"
+            FIREBASE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+            ...
+            ```
+            """)
+    
+    st.write("Desarrollado con Streamlit + Firebase")
