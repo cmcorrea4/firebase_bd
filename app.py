@@ -2,56 +2,33 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-import json
 import pandas as pd
 from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(page_title="Gestor de Contactos con Firebase", page_icon="📞", layout="wide")
 
-# Inicializar Firebase (solo una vez)
+# Inicializar Firebase usando st.secrets (para Streamlit Cloud)
 @st.cache_resource
 def inicializar_firebase():
     # Verifica si Firebase ya está inicializado
     if not firebase_admin._apps:
-        # IMPORTANTE: Reemplaza esto con las credenciales de tu proyecto Firebase
-        # Este es solo un ejemplo de estructura, NO son credenciales reales
-        key_dict = {
-            "type": "service_account",
-            "project_id": "tu-proyecto-id",
-            "private_key_id": "tu-private-key-id",
-            "private_key": "-----BEGIN PRIVATE KEY-----\ntu-clave-privada\n-----END PRIVATE KEY-----\n",
-            "client_email": "firebase-adminsdk-ejemplo@tu-proyecto-id.iam.gserviceaccount.com",
-            "client_id": "tu-client-id",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-ejemplo%40tu-proyecto-id.iam.gserviceaccount.com",
-            "universe_domain": "googleapis.com"
-        }
-        
-        # Si prefieres usar un archivo JSON en lugar del diccionario:
-        # cred = credentials.Certificate('ruta/a/tu-archivo-credenciales.json')
-        
-        cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred)
+        try:
+            # Usar st.secrets para las credenciales de Firebase
+            key_dict = st.secrets["firebase"]
+            cred = credentials.Certificate(key_dict)
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"Error al inicializar Firebase: {e}")
+            st.error("Asegúrate de configurar los secretos en Streamlit Cloud")
+            return None
     
     return firestore.client()
-
-# Alternativa de inicialización utilizando secretos de Streamlit
-# Para producción, es mejor usar st.secrets para manejar credenciales:
-# @st.cache_resource
-# def inicializar_firebase():
-#     if not firebase_admin._apps:
-#         key_dict = st.secrets["firebase"]
-#         cred = credentials.Certificate(key_dict)
-#         firebase_admin.initialize_app(cred)
-#     return firestore.client()
 
 # Inicializar Firestore
 try:
     db = inicializar_firebase()
-    conexion_exitosa = True
+    conexion_exitosa = db is not None
 except Exception as e:
     st.error(f"Error al conectar con Firebase: {e}")
     conexion_exitosa = False
@@ -113,7 +90,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
             else:
-                st.error("No hay conexión con Firebase. Revisa tus credenciales.")
+                st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
 
 # Pestaña: Ver Contactos
 with tab2:
@@ -204,7 +181,7 @@ with tab2:
         except Exception as e:
             st.error(f"Error al recuperar contactos: {e}")
     else:
-        st.error("No hay conexión con Firebase. Revisa tus credenciales.")
+        st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
 
 # Pestaña: Buscar Contactos
 with tab3:
@@ -256,27 +233,47 @@ with tab3:
             except Exception as e:
                 st.error(f"Error en la búsqueda: {e}")
     else:
-        st.error("No hay conexión con Firebase. Revisa tus credenciales.")
+        st.error("No hay conexión con Firebase. Revisa tus secretos en Streamlit Cloud.")
 
 # Información adicional
 with st.sidebar:
     st.title("Información")
     st.info("""
-    ## Configuración de Firebase
+    ## Configuración de Firebase en Streamlit Cloud
     
-    Para que esta aplicación funcione, debes:
+    Para que esta aplicación funcione en Streamlit Cloud:
     
-    1. Crear un proyecto en [Firebase Console](https://console.firebase.google.com/)
-    2. Activar Firestore en tu proyecto
-    3. Generar una clave privada para cuenta de servicio
-    4. Reemplazar las credenciales en el código
-    
-    [Ver documentación de Firebase](https://firebase.google.com/docs/firestore/quickstart)
+    1. Crea un proyecto en [Firebase Console](https://console.firebase.google.com/)
+    2. Activa Firestore en tu proyecto
+    3. Genera una clave privada para cuenta de servicio
+    4. Configura estos datos como secretos en Streamlit Cloud
     """)
     
-    st.warning("""
-    ## Importante
-    
-    No subas tus credenciales de Firebase a repositorios públicos.
-    Para producción, usa variables de entorno o secretos de Streamlit.
+    st.code("""
+# Ejemplo de estructura para st.secrets["firebase"]
+[firebase]
+type = "service_account"
+project_id = "tu-proyecto-id"
+private_key_id = "tu-private-key-id"
+private_key = \"\"\"-----BEGIN PRIVATE KEY-----
+tu-clave-privada
+-----END PRIVATE KEY-----\"\"\"
+client_email = "firebase-adminsdk@tu-proyecto.iam.gserviceaccount.com"
+client_id = "tu-client-id"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
+universe_domain = "googleapis.com"
     """)
+
+    # Verificar si los secretos están configurados
+    if conexion_exitosa:
+        st.success("✅ Conexión con Firebase establecida")
+    else:
+        st.error("❌ No se pudo conectar con Firebase")
+        st.warning("""
+        Verifica que hayas configurado correctamente los secretos en Streamlit Cloud.
+        
+        Para desarrollo local, crea un archivo `.streamlit/secrets.toml` con tus credenciales.
+        """)
