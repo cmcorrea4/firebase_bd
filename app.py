@@ -12,7 +12,7 @@ import uuid
 import io
 
 # Configuración de la página
-st.set_page_config(page_title="Gestor de Clientes con Firebase", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="Gestor de Clientes Empresa Viva", page_icon="🏢", layout="wide")
 
 # Función para inicializar Firebase de forma segura
 @st.cache_resource
