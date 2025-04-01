@@ -1,3 +1,4 @@
+import streamlit as st
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
@@ -143,36 +144,14 @@ def obtener_clientes():
 def get_pdf_download_link(pdf_bytes, filename):
     """Genera un enlace de descarga para un archivo PDF"""
     b64 = base64.b64encode(pdf_bytes).decode()
-    # Asegurar que el nombre de archivo sea seguro para URL
-    safe_filename = filename.replace(" ", "_").replace(",", "").replace("'", "").replace('"', "")
-    
-    # Crear un enlace HTML que forzará la descarga
-    href = f'''
-    <a href="data:application/pdf;base64,{b64}" 
-       download="{safe_filename}" 
-       target="_blank" 
-       style="text-decoration:none;color:white;background-color:#4CAF50;padding:8px 12px;border-radius:4px;font-weight:bold;">
-       📥 Descargar PDF
-    </a>
-    '''
+    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}" target="_blank">Descargar {filename}</a>'
     return href
 
 # Función para mostrar un visor de PDF en Streamlit
 def show_pdf_viewer(pdf_bytes):
     """Muestra un visor de PDF en Streamlit"""
     base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-    # Crear un iframe con controles completos de visualización y descarga
-    pdf_display = f'''
-    <div style="display:flex;justify-content:center;margin:15px 0">
-        <iframe src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" 
-                height="500px" 
-                type="application/pdf"
-                style="border:1px solid #ddd;border-radius:5px;"
-                frameborder="0">
-        </iframe>
-    </div>
-    '''
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
 # Función para subir archivo PDF a Firestore directamente
