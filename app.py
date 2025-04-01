@@ -301,7 +301,7 @@ with tab1:
                     "sitio_web": sitio_web,
                     "rut": rut,
                     "notas": notas,
-                    "fecha_creacion": datetime.now(),
+                    "fecha_creacion": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                     "archivos": [],
                     "capacitaciones": []
                 }
@@ -387,12 +387,21 @@ with tab2:
                         # Mostrar capacitaciones si existen
                         if "capacitaciones" in cliente_seleccionado and cliente_seleccionado["capacitaciones"]:
                             with st.expander("🎓 Capacitaciones realizadas"):
-                                for cap in cliente_seleccionado["capacitaciones"]:
-                                    st.write(f"- **{cap.get('nombre', 'Sin nombre')}** ({cap.get('fecha', 'Sin fecha')})")
-                                    st.write(f"  Estado: {cap.get('estado', 'No especificado')}")
-                                    if cap.get('detalles'):
-                                        st.write(f"  Detalles: {cap.get('detalles')}")
-                                    st.write("---")
+                                # Asegurarse de que las capacitaciones son una lista
+                                capacitaciones = cliente_seleccionado["capacitaciones"]
+                                if not isinstance(capacitaciones, list):
+                                    st.error("Error: El formato de capacitaciones no es válido.")
+                                else:
+                                    for cap in capacitaciones:
+                                        try:
+                                            st.write(f"- **{cap.get('nombre', 'Sin nombre')}** ({cap.get('fecha', 'Sin fecha')})")
+                                            st.write(f"  Estado: {cap.get('estado', 'No especificado')}")
+                                            if cap.get('detalles'):
+                                                st.write(f"  Detalles: {cap.get('detalles')}")
+                                            st.write("---")
+                                        except Exception as e:
+                                            st.error(f"Error al mostrar capacitación: {e}")
+                                            st.write("---")
                         
                         # Mostrar archivos si existen
                         if "archivos" in cliente_seleccionado and cliente_seleccionado["archivos"]:
@@ -631,48 +640,63 @@ with tab4:
                             if "capacitaciones" in cliente_data and cliente_data["capacitaciones"]:
                                 st.subheader(f"Capacitaciones de {cliente_data.get('nombre')} ({cliente_data.get('empresa')})")
                                 
-                                for i, cap in enumerate(cliente_data["capacitaciones"]):
-                                    with st.container():
-                                        col1, col2, col3 = st.columns([3, 2, 1])
-                                        
-                                        with col1:
-                                            st.write(f"**{cap.get('nombre', 'Sin nombre')}**")
-                                            st.write(cap.get('detalles', ''))
-                                            if cap.get('instructor'):
-                                                st.write(f"Instructor: {cap.get('instructor')}")
-                                            if cap.get('ubicacion'):
-                                                st.write(f"Ubicación: {cap.get('ubicacion')}")
-                                        
-                                        with col2:
-                                            st.write(f"Fecha: {cap.get('fecha', 'N/A')}")
-                                        
-                                        with col3:
-                                            estado_color = {
-                                                "Completada": "green",
-                                                "En progreso": "blue",
-                                                "Pendiente": "orange",
-                                                "Cancelada": "red"
-                                            }
-                                            color = estado_color.get(cap.get('estado'), "gray")
-                                            st.markdown(f"<span style='color:{color};font-weight:bold'>{cap.get('estado', 'N/A')}</span>", unsafe_allow_html=True)
-                                        
-                                        # Opción para eliminar capacitación específica
-                                        if st.button("Eliminar esta capacitación", key=f"del_cap_{i}"):
-                                            try:
-                                                # Eliminar esta capacitación específica
-                                                nuevas_capacitaciones = cliente_data["capacitaciones"].copy()
-                                                nuevas_capacitaciones.pop(i)
-                                                
-                                                # Actualizar documento
-                                                db.collection("clientes").document(cliente_ver_id).update({
-                                                    "capacitaciones": nuevas_capacitaciones
-                                                })
-                                                
-                                                st.success("Capacitación eliminada correctamente")
-                                                st.experimental_rerun()
-                                            except Exception as e:
-                                                st.error(f"Error al eliminar capacitación: {e}")
-                                        
+                                # Asegurarse de que las capacitaciones son una lista
+                                capacitaciones = cliente_data["capacitaciones"]
+                                if not isinstance(capacitaciones, list):
+                                    st.error("Error: El formato de capacitaciones no es válido.")
+                                    capacitaciones = []  # Crear una lista vacía para evitar errores
+                                
+                                for i, cap in enumerate(capacitaciones):
+                                    try:
+                                        with st.container():
+                                            col1, col2, col3 = st.columns([3, 2, 1])
+                                            
+                                            with col1:
+                                                st.write(f"**{cap.get('nombre', 'Sin nombre')}**")
+                                                detalles = cap.get('detalles', '')
+                                                if detalles:
+                                                    st.write(detalles)
+                                                instructor = cap.get('instructor', '')
+                                                if instructor:
+                                                    st.write(f"Instructor: {instructor}")
+                                                ubicacion = cap.get('ubicacion', '')
+                                                if ubicacion:
+                                                    st.write(f"Ubicación: {ubicacion}")
+                                            
+                                            with col2:
+                                                st.write(f"Fecha: {cap.get('fecha', 'N/A')}")
+                                            
+                                            with col3:
+                                                estado_color = {
+                                                    "Completada": "green",
+                                                    "En progreso": "blue",
+                                                    "Pendiente": "orange",
+                                                    "Cancelada": "red"
+                                                }
+                                                estado = cap.get('estado', 'N/A')
+                                                color = estado_color.get(estado, "gray")
+                                                st.markdown(f"<span style='color:{color};font-weight:bold'>{estado}</span>", unsafe_allow_html=True)
+                                            
+                                            # Opción para eliminar capacitación específica
+                                            if st.button("Eliminar esta capacitación", key=f"del_cap_{i}"):
+                                                try:
+                                                    # Eliminar esta capacitación específica
+                                                    nuevas_capacitaciones = capacitaciones.copy()
+                                                    nuevas_capacitaciones.pop(i)
+                                                    
+                                                    # Actualizar documento
+                                                    db.collection("clientes").document(cliente_ver_id).update({
+                                                        "capacitaciones": nuevas_capacitaciones
+                                                    })
+                                                    
+                                                    st.success("Capacitación eliminada correctamente")
+                                                    st.experimental_rerun()
+                                                except Exception as e:
+                                                    st.error(f"Error al eliminar capacitación: {e}")
+                                            
+                                            st.divider()
+                                    except Exception as e:
+                                        st.error(f"Error al mostrar capacitación {i+1}: {e}")
                                         st.divider()
                             else:
                                 st.info(f"{cliente_data.get('nombre')} ({cliente_data.get('empresa')}) no tiene capacitaciones registradas.")
