@@ -453,11 +453,11 @@ with tab2:
 with st.sidebar:
     st.title("Información")
     st.info("""
-    ## Gestor de Clientes con Firebase
+    ## Gestor de Clientes 
     
     Esta aplicación permite:
     
-    - Agregar clientes a Firebase
+    - Agregar clientes 
     - Ver la lista de clientes
     - Buscar clientes por nombre, empresa, email o ciudad
     - Registrar capacitaciones para clientes
