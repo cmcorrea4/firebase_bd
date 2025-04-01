@@ -2,6 +2,7 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
+from firebase_admin import storage
 import pandas as pd
 from datetime import datetime, timedelta
 import json
@@ -25,6 +26,10 @@ def inicializar_firebase():
                 try:
                     # Obtener credenciales de st.secrets
                     firebase_secrets = st.secrets["firebase"]
+                    
+                    # Crear el objeto de credenciales
+                    cred_dict = firebase_secrets
+                    cred = credentials.Certificate(cred_dict)
                     
                     # Obtener el proyecto de Firebase desde las credenciales
                     project_id = cred_dict['project_id']
@@ -108,8 +113,10 @@ conexion_exitosa = firebase_refs is not None
 
 if conexion_exitosa:
     db = firebase_refs["db"]
+    bucket = firebase_refs["bucket"]
 else:
     db = None
+    bucket = None
 
 # Quitar los mensajes de depuración después de la conexión
 st.empty()
@@ -442,6 +449,195 @@ with tab2:
     else:
         st.error("No hay conexión con Firebase.")
 
+# Información adicional
+with st.sidebar:
+    st.title("Información")
+    st.info("""
+    ## Gestor de Clientes con Firebase
+    
+    Esta aplicación permite:
+    
+    - Agregar clientes a Firebase
+    - Ver la lista de clientes
+    - Buscar clientes por nombre, empresa, email o ciudad
+    - Registrar capacitaciones para clientes
+    - Gestionar archivos PDF por cliente
+    - Eliminar clientes, capacitaciones o archivos
+    
+    Los datos se almacenan en Firestore (base de datos de Firebase).
+    Los archivos PDF se almacenan en Firebase Storage.
+    """)
+    
+    if not conexion_exitosa:
+        st.error("""
+        ### ⚠️ Error de conexión
+        
+        La aplicación no pudo conectarse a Firebase. Verifica la configuración de tus secretos en Streamlit Cloud.
+        
+        Para más información, consulta la sección de "Ayuda" a continuación.
+        """)
+        
+        with st.expander("Ayuda con la configuración"):
+            st.write("""
+            ### Configuración de credenciales en Streamlit Cloud
+            
+            Para configurar las credenciales correctamente:
+            
+            1. Ve a la configuración de tu aplicación en Streamlit Cloud
+            2. En Advanced Settings > Secrets, configura tus credenciales en formato JSON
+            
+            Ejemplo:
+            ```
+            FIREBASE_CREDENTIALS = {"type": "service_account", "project_id": "tu-proyecto", ...}
+            ```
+            
+            O como variables individuales:
+            ```
+            FIREBASE_TYPE = "service_account"
+            FIREBASE_PROJECT_ID = "tu-proyecto"
+            FIREBASE_PRIVATE_KEY_ID = "tu-private-key-id"
+            FIREBASE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+            ...
+            ```
+            """)
+    
+    st.write("Desarrollado con Streamlit + Firebase")
+
+# Pestaña: Gestionar Archivos
+with tab5:
+    st.header("Gestionar Archivos PDF")
+    
+    if conexion_exitosa:
+        # Obtener la lista de clientes
+        clientes = obtener_clientes()
+        
+        if not clientes:
+            st.info("No hay clientes registrados para gestionar archivos.")
+        else:
+            # Subir nuevos archivos
+            st.subheader("Subir nuevo archivo PDF")
+            
+            # Formulario para subir archivo
+            with st.form(key="archivo_form"):
+                # Selector de cliente
+                cliente_id = st.selectbox(
+                    "Seleccionar cliente:",
+                    options=[c["id"] for c in clientes],
+                    format_func=lambda x: f"{next((c['nombre'] for c in clientes if c['id'] == x), '')} - {next((c['empresa'] for c in clientes if c['id'] == x), '')}",
+                    key="subir_archivo_cliente"
+                )
+                
+                # Mostrar información del cliente seleccionado
+                if cliente_id:
+                    cliente = next((c for c in clientes if c["id"] == cliente_id), None)
+                    if cliente:
+                        st.write(f"Empresa: {cliente.get('empresa', 'N/A')}")
+                
+                # Campos para el archivo
+                archivo_pdf = st.file_uploader("Seleccionar archivo PDF", type="pdf")
+                descripcion_archivo = st.text_area("Descripción del archivo")
+                
+                # Botón para subir
+                submit_button = st.form_submit_button("Subir archivo")
+                
+                if submit_button:
+                    if not archivo_pdf:
+                        st.error("Debes seleccionar un archivo PDF para subir.")
+                    elif not cliente_id:
+                        st.error("Debes seleccionar un cliente.")
+                    else:
+                        # Intentar subir el archivo
+                        exito, mensaje = subir_archivo(cliente_id, archivo_pdf, descripcion_archivo)
+                        
+                        if exito:
+                            st.success(mensaje)
+                            st.experimental_rerun()
+                        else:
+                            st.error(mensaje)
+            
+            # Gestionar archivos existentes
+            st.subheader("Gestionar archivos existentes")
+            
+            cliente_ver_id = st.selectbox(
+                "Seleccionar cliente para ver archivos:",
+                options=[c["id"] for c in clientes],
+                format_func=lambda x: f"{next((c['nombre'] for c in clientes if c['id'] == x), '')} - {next((c['empresa'] for c in clientes if c['id'] == x), '')}",
+                key="ver_archivos"
+            )
+            
+            if cliente_ver_id:
+                # Obtener el cliente actualizado de Firestore para tener datos actualizados
+                try:
+                    doc = db.collection("clientes").document(cliente_ver_id).get()
+                    if doc.exists:
+                        cliente_data = doc.to_dict()
+                        cliente_data["id"] = doc.id
+                        
+                        if "archivos" in cliente_data and cliente_data["archivos"]:
+                            st.write(f"Archivos de {cliente_data.get('nombre')} ({cliente_data.get('empresa')})")
+                            
+                            for i, archivo in enumerate(cliente_data["archivos"]):
+                                with st.container():
+                                    col1, col2, col3 = st.columns([3, 2, 1])
+                                    
+                                    with col1:
+                                        st.write(f"**{archivo.get('nombre', 'Sin nombre')}**")
+                                        st.write(f"Descripción: {archivo.get('descripcion', 'Sin descripción')}")
+                                    
+                                    with col2:
+                                        if archivo.get('fecha_subida'):
+                                            if isinstance(archivo.get('fecha_subida'), datetime):
+                                                st.write(f"Subido: {archivo.get('fecha_subida').strftime('%d/%m/%Y %H:%M')}")
+                                            else:
+                                                st.write(f"Subido: {archivo.get('fecha_subida')}")
+                                    
+                                    with col3:
+                                        if archivo.get('url'):
+                                            st.markdown(f"[Descargar PDF]({archivo.get('url')})")
+                                            
+                                    # Vista previa del PDF (si es posible) o ícono
+                                    if archivo.get('url'):
+                                        st.components.v1.iframe(archivo.get('url'), height=200)
+                                    
+                                    # Botones de acción para el archivo
+                                    col_btn1, col_btn2 = st.columns(2)
+                                    
+                                    # Botón para descargar en la primera columna
+                                    with col_btn1:
+                                        if archivo.get('url'):
+                                            st.markdown(f"[📥 Descargar PDF]({archivo.get('url')})")
+                                        elif archivo.get('contenido_base64'):
+                                            # Si no hay URL pero tenemos el contenido en base64
+                                            try:
+                                                archivo_bytes = base64.b64decode(archivo.get('contenido_base64'))
+                                                st.download_button(
+                                                    label="📥 Descargar Archivo",
+                                                    data=archivo_bytes,
+                                                    file_name=archivo.get('nombre', "archivo.pdf"),
+                                                    mime="application/pdf",
+                                                    key=f"download_btn_{i}"
+                                                )
+                                            except Exception as e:
+                                                st.error(f"Error al preparar la descarga: {e}")
+                                    
+                                    # Botón para eliminar en la segunda columna
+                                    with col_btn2:
+                                        if st.button("🗑️ Eliminar este archivo", key=f"del_archivo_{i}"):
+                                            exito, mensaje = eliminar_archivo(cliente_ver_id, i)
+                                            if exito:
+                                                st.success(mensaje)
+                                                st.experimental_rerun()
+                                            else:
+                                                st.error(mensaje)
+                                    
+                                    st.divider()
+                        else:
+                            st.info(f"{cliente_data.get('nombre')} ({cliente_data.get('empresa')}) no tiene archivos adjuntos.")
+                except Exception as e:
+                    st.error(f"Error al obtener archivos: {e}")
+    else:
+        st.error("No hay conexión con Firebase.")
+
 # Pestaña: Buscar Clientes
 with tab3:
     st.header("Buscar Clientes")
@@ -702,167 +898,3 @@ with tab4:
                         st.error(f"Error al obtener capacitaciones: {e}")
     else:
         st.error("No hay conexión con Firebase.")
-
-# Pestaña: Gestionar Archivos
-with tab5:
-    st.header("Gestionar Archivos PDF")
-    
-    if conexion_exitosa:
-        # Obtener la lista de clientes
-        clientes = obtener_clientes()
-        
-        if not clientes:
-            st.info("No hay clientes registrados para gestionar archivos.")
-        else:
-            # Subir nuevos archivos
-            st.subheader("Subir nuevo archivo PDF")
-            
-            # Formulario para subir archivo
-            with st.form(key="archivo_form"):
-                # Selector de cliente
-                cliente_id = st.selectbox(
-                    "Seleccionar cliente:",
-                    options=[c["id"] for c in clientes],
-                    format_func=lambda x: f"{next((c['nombre'] for c in clientes if c['id'] == x), '')} - {next((c['empresa'] for c in clientes if c['id'] == x), '')}",
-                    key="subir_archivo_cliente"
-                )
-                
-                # Mostrar información del cliente seleccionado
-                if cliente_id:
-                    cliente = next((c for c in clientes if c["id"] == cliente_id), None)
-                    if cliente:
-                        st.write(f"Empresa: {cliente.get('empresa', 'N/A')}")
-                
-                # Campos para el archivo
-                archivo_pdf = st.file_uploader("Seleccionar archivo PDF", type="pdf")
-                descripcion_archivo = st.text_area("Descripción del archivo")
-                
-                # Botón para subir
-                submit_button = st.form_submit_button("Subir archivo")
-                
-                if submit_button:
-                    if not archivo_pdf:
-                        st.error("Debes seleccionar un archivo PDF para subir.")
-                    elif not cliente_id:
-                        st.error("Debes seleccionar un cliente.")
-                    else:
-                        # Intentar subir el archivo
-                        exito, mensaje = subir_archivo(cliente_id, archivo_pdf, descripcion_archivo)
-                        
-                        if exito:
-                            st.success(mensaje)
-                            st.experimental_rerun()
-                        else:
-                            st.error(mensaje)
-            
-            # Gestionar archivos existentes
-            st.subheader("Gestionar archivos existentes")
-            
-            cliente_ver_id = st.selectbox(
-                "Seleccionar cliente para ver archivos:",
-                options=[c["id"] for c in clientes],
-                format_func=lambda x: f"{next((c['nombre'] for c in clientes if c['id'] == x), '')} - {next((c['empresa'] for c in clientes if c['id'] == x), '')}",
-                key="ver_archivos"
-            )
-            
-            if cliente_ver_id:
-                # Obtener el cliente actualizado de Firestore para tener datos actualizados
-                try:
-                    doc = db.collection("clientes").document(cliente_ver_id).get()
-                    if doc.exists:
-                        cliente_data = doc.to_dict()
-                        cliente_data["id"] = doc.id
-                        
-                        if "archivos" in cliente_data and cliente_data["archivos"]:
-                            st.write(f"Archivos de {cliente_data.get('nombre')} ({cliente_data.get('empresa')})")
-                            
-                            for i, archivo in enumerate(cliente_data["archivos"]):
-                                with st.container():
-                                    col1, col2, col3 = st.columns([3, 2, 1])
-                                    
-                                    with col1:
-                                        st.write(f"**{archivo.get('nombre', 'Sin nombre')}**")
-                                        st.write(f"Descripción: {archivo.get('descripcion', 'Sin descripción')}")
-                                    
-                                    with col2:
-                                        if archivo.get('fecha_subida') and isinstance(archivo.get('fecha_subida'), datetime):
-                                            st.write(f"Subido: {archivo.get('fecha_subida').strftime('%d/%m/%Y %H:%M')}")
-                                    
-                                    with col3:
-                                        if archivo.get('url'):
-                                            st.markdown(f"[Descargar PDF]({archivo.get('url')})")
-                                            
-                                    # Vista previa del PDF (si es posible) o ícono
-                                    if archivo.get('url'):
-                                        st.components.v1.iframe(archivo.get('url'), height=200)
-                                    
-                                    # Botón para eliminar archivo
-                                    if st.button("Eliminar este archivo", key=f"del_archivo_{i}"):
-                                        exito, mensaje = eliminar_archivo(cliente_ver_id, i)
-                                        if exito:
-                                            st.success(mensaje)
-                                            st.experimental_rerun()
-                                        else:
-                                            st.error(mensaje)
-                                    
-                                    st.divider()
-                        else:
-                            st.info(f"{cliente_data.get('nombre')} ({cliente_data.get('empresa')}) no tiene archivos adjuntos.")
-                except Exception as e:
-                    st.error(f"Error al obtener archivos: {e}")
-    else:
-        st.error("No hay conexión con Firebase.")
-
-# Información adicional
-with st.sidebar:
-    st.title("Información")
-    st.info("""
-    ## Gestor de Clientes con Firebase
-    
-    Esta aplicación permite:
-    
-    - Agregar clientes a Firebase
-    - Ver la lista de clientes
-    - Buscar clientes por nombre, empresa, email o ciudad
-    - Registrar capacitaciones para clientes
-    - Gestionar archivos PDF por cliente
-    - Eliminar clientes, capacitaciones o archivos
-    
-    Los datos se almacenan en Firestore (base de datos de Firebase).
-    Los archivos PDF se almacenan en Firebase Storage.
-    """)
-    
-    if not conexion_exitosa:
-        st.error("""
-        ### ⚠️ Error de conexión
-        
-        La aplicación no pudo conectarse a Firebase. Verifica la configuración de tus secretos en Streamlit Cloud.
-        
-        Para más información, consulta la sección de "Ayuda" a continuación.
-        """)
-        
-        with st.expander("Ayuda con la configuración"):
-            st.write("""
-            ### Configuración de credenciales en Streamlit Cloud
-            
-            Para configurar las credenciales correctamente:
-            
-            1. Ve a la configuración de tu aplicación en Streamlit Cloud
-            2. En Advanced Settings > Secrets, configura tus credenciales en formato JSON
-            
-            Ejemplo:
-            ```
-            FIREBASE_CREDENTIALS = {"type": "service_account", "project_id": "tu-proyecto", ...}
-            ```
-            
-            O como variables individuales:
-            ```
-            FIREBASE_TYPE = "service_account"
-            FIREBASE_PROJECT_ID = "tu-proyecto"
-            FIREBASE_PRIVATE_KEY_ID = "tu-private-key-id"
-            FIREBASE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-            ...
-            ```
-            """)
-    
-    st.write("Desarrollado con Streamlit + Firebase")
