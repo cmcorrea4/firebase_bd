@@ -2,13 +2,13 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-from firebase_admin import storage
 import pandas as pd
 from datetime import datetime, timedelta
 import json
 import os
 import base64
 import uuid
+import io
 
 # Configuración de la página
 st.set_page_config(page_title="Gestor de Clientes con Firebase", page_icon="🏢", layout="wide")
@@ -102,13 +102,14 @@ def inicializar_firebase():
     # Si ya está inicializado, devolver las referencias
     return {"db": firestore.client(), "bucket": storage.bucket()}
 
-# Inicializar Firestore y Storage
+# Inicializar Firestore
 firebase_refs = inicializar_firebase()
 conexion_exitosa = firebase_refs is not None
 
 if conexion_exitosa:
     db = firebase_refs["db"]
-    bucket = firebase_refs["bucket"]
+else:
+    db = None
 
 # Quitar los mensajes de depuración después de la conexión
 st.empty()
@@ -139,46 +140,45 @@ def obtener_clientes():
         st.error(f"Error al recuperar clientes: {e}")
         return []
 
-# Función para subir archivo PDF a Firebase Storage
+# Función para codificar un archivo PDF en base64
+def get_pdf_download_link(pdf_bytes, filename):
+    """Genera un enlace de descarga para un archivo PDF"""
+    b64 = base64.b64encode(pdf_bytes).decode()
+    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}" target="_blank">Descargar {filename}</a>'
+    return href
+
+# Función para mostrar un visor de PDF en Streamlit
+def show_pdf_viewer(pdf_bytes):
+    """Muestra un visor de PDF en Streamlit"""
+    base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
+
+# Función para subir archivo PDF a Firestore directamente
 def subir_archivo(cliente_id, archivo, descripcion):
     try:
-        # Imprimir información de diagnóstico
-        st.write(f"Iniciando carga de archivo: {archivo.name}")
-        st.write(f"Bucket disponible: {bucket.name if bucket else 'No hay bucket disponible'}")
-        
-        # Generar nombre único para el archivo
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nombre_archivo = f"clientes/{cliente_id}/{timestamp}_{archivo.name}"
-        
-        # Referencia al archivo en Storage
-        blob = bucket.blob(nombre_archivo)
-        
         # Leer el contenido del archivo en memoria
         archivo_bytes = archivo.read()
         
-        st.write(f"Tamaño del archivo: {len(archivo_bytes)} bytes")
+        # Codificar el contenido en base64 para guardarlo en Firestore
+        # Nota: Esto solo es adecuado para archivos pequeños (<1MB)
+        # Ya que Firestore tiene un límite de 1MB por documento
+        if len(archivo_bytes) > 900000:  # Deja margen para otros campos
+            return False, "El archivo es demasiado grande (debe ser menor de 900KB). Intente con un archivo más pequeño."
         
-        # Subir el contenido del archivo desde memoria
-        blob.upload_from_string(
-            archivo_bytes,
-            content_type="application/pdf"
-        )
+        archivo_base64 = base64.b64encode(archivo_bytes).decode('utf-8')
         
-        # Hacer público el archivo con un tiempo de expiración (7 días)
-        # Nota: en producción, considera usar tokens firmados en lugar de hacer público
-        expiracion = datetime.now() + timedelta(days=7)
-        url_archivo = blob.generate_signed_url(expiration=expiracion)
-        
-        st.write(f"Archivo subido correctamente a: {nombre_archivo}")
+        # Generar nombre único para el archivo
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nombre_archivo = f"{timestamp}_{archivo.name}"
         
         # Crear registro del archivo en Firestore
         archivo_data = {
             "nombre": archivo.name,
             "descripcion": descripcion,
-            "url": url_archivo,
-            "ruta_storage": nombre_archivo,
+            "contenido_base64": archivo_base64,  # Guardar el contenido en base64
             "fecha_subida": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            "expira": expiracion.strftime("%d/%m/%Y %H:%M:%S")
+            "tamano_bytes": len(archivo_bytes)
         }
         
         # Obtener referencia al documento del cliente
@@ -198,9 +198,6 @@ def subir_archivo(cliente_id, archivo, descripcion):
             # Actualizar el documento en Firestore
             doc_ref.update({"archivos": archivos})
             
-            # Limpiar mensajes de diagnóstico
-            st.empty()
-            
             return True, "Archivo subido exitosamente"
         else:
             return False, "No se encontró el cliente seleccionado"
@@ -211,7 +208,7 @@ def subir_archivo(cliente_id, archivo, descripcion):
         st.code(traceback.format_exc())
         return False, f"Error al subir archivo: {str(e)}"
 
-# Función para eliminar archivo de Firebase Storage
+# Función para eliminar archivo
 def eliminar_archivo(cliente_id, indice_archivo):
     try:
         # Obtener documento del cliente
@@ -223,15 +220,6 @@ def eliminar_archivo(cliente_id, indice_archivo):
             archivos = cliente_data.get("archivos", [])
             
             if 0 <= indice_archivo < len(archivos):
-                # Obtener información del archivo a eliminar
-                archivo = archivos[indice_archivo]
-                ruta_storage = archivo.get("ruta_storage")
-                
-                # Eliminar del Storage
-                if ruta_storage:
-                    blob = bucket.blob(ruta_storage)
-                    blob.delete()
-                
                 # Eliminar del array de archivos
                 archivos.pop(indice_archivo)
                 
