@@ -14,7 +14,33 @@ import io
 # Configuración de la página
 st.set_page_config(page_title="Gestor de Clientes Empresa Viva", page_icon="🏢", layout="wide")
 
-# Versión corregida de inicializar_firebase()
+
+# Función auxiliar para convertir AttrDict a diccionario estándar
+def convert_to_dict(obj):
+    """Convierte recursivamente un objeto AttrDict a un diccionario Python estándar"""
+    if hasattr(obj, "__dict__") or hasattr(obj, "keys"):
+        # Es un objeto tipo diccionario o clase
+        try:
+            result = {}
+            # Intenta iterar sobre él como un diccionario
+            items = obj.items() if hasattr(obj, "items") else obj.__dict__.items()
+            for key, value in items:
+                if key.startswith("_"):  # Ignorar atributos privados
+                    continue
+                # Convertir recursivamente
+                result[key] = convert_to_dict(value)
+            return result
+        except (AttributeError, TypeError):
+            # Falló la conversión, devolver el objeto original
+            return obj
+    elif isinstance(obj, list):
+        # Si es una lista, convertir cada elemento
+        return [convert_to_dict(item) for item in obj]
+    else:
+        # Para tipos básicos, devolver tal cual
+        return obj
+
+# Versión simplificada de inicializar_firebase()
 @st.cache_resource
 def inicializar_firebase():
     if not firebase_admin._apps:
@@ -86,10 +112,16 @@ def inicializar_firebase():
                             if "firebase" in st.secrets:
                                 firebase_dict = st.secrets["firebase"]
                                 if isinstance(firebase_dict, dict):
-                                    cred = credentials.Certificate(firebase_dict)
-                                else:
-                                    cred_dict = json.loads(firebase_dict)
+                                    cred_dict = firebase_dict
                                     cred = credentials.Certificate(cred_dict)
+                                else:
+                                    try:
+                                        cred_dict = json.loads(firebase_dict)
+                                        cred = credentials.Certificate(cred_dict)
+                                    except:
+                                        # Si falla la conversión JSON, intentar convertir con la función auxiliar
+                                        cred_dict = convert_to_dict(firebase_dict)
+                                        cred = credentials.Certificate(cred_dict)
                                 
                                 project_id = cred_dict.get('project_id', '')
                                 firebase_admin.initialize_app(cred, {
@@ -115,7 +147,7 @@ def inicializar_firebase():
     except Exception as e:
         st.error(f"Error al obtener las referencias de Firebase: {str(e)}")
         return None
-# Inicializar Firestore
+
 firebase_refs = inicializar_firebase()
 conexion_exitosa = firebase_refs is not None
 
