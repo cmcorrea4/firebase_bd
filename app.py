@@ -14,35 +14,7 @@ import io
 # Configuración de la página
 st.set_page_config(page_title="Gestor de Clientes Empresa Viva", page_icon="🏢", layout="wide")
 
-# Función para inicializar Firebase de forma segura
-# Reemplaza la función inicializar_firebase con esta versión corregida
-
-# Función auxiliar para convertir AttrDict a diccionario estándar
-def convert_to_dict(obj):
-    """Convierte recursivamente un objeto AttrDict a un diccionario Python estándar"""
-    if hasattr(obj, "__dict__") or hasattr(obj, "keys"):
-        # Es un objeto tipo diccionario o clase
-        try:
-            result = {}
-            # Intenta iterar sobre él como un diccionario
-            items = obj.items() if hasattr(obj, "items") else obj.__dict__.items()
-            for key, value in items:
-                if key.startswith("_"):  # Ignorar atributos privados
-                    continue
-                # Convertir recursivamente
-                result[key] = convert_to_dict(value)
-            return result
-        except (AttributeError, TypeError):
-            # Falló la conversión, devolver el objeto original
-            return obj
-    elif isinstance(obj, list):
-        # Si es una lista, convertir cada elemento
-        return [convert_to_dict(item) for item in obj]
-    else:
-        # Para tipos básicos, devolver tal cual
-        return obj
-
-# Versión simplificada de inicializar_firebase()
+# Versión corregida de inicializar_firebase()
 @st.cache_resource
 def inicializar_firebase():
     if not firebase_admin._apps:
@@ -69,9 +41,66 @@ def inicializar_firebase():
                     st.error(f"Error con credenciales: {str(e)}")
                     return None
             else:
-                # Código para Streamlit Cloud...
-                # ...
-                
+                # Entorno de Streamlit Cloud
+                try:
+                    # Verificar si están disponibles las variables de entorno individuales
+                    if all(key in st.secrets.keys() for key in [
+                        "FIREBASE_TYPE", "FIREBASE_PROJECT_ID", "FIREBASE_PRIVATE_KEY_ID",
+                        "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL"
+                    ]):
+                        # Crear diccionario de credenciales desde variables individuales
+                        cred_dict = {
+                            "type": st.secrets["FIREBASE_TYPE"],
+                            "project_id": st.secrets["FIREBASE_PROJECT_ID"],
+                            "private_key_id": st.secrets["FIREBASE_PRIVATE_KEY_ID"],
+                            "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
+                            "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
+                            "client_id": st.secrets.get("FIREBASE_CLIENT_ID", ""),
+                            "auth_uri": st.secrets.get("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
+                            "token_uri": st.secrets.get("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+                            "auth_provider_x509_cert_url": st.secrets.get("FIREBASE_AUTH_PROVIDER_X509_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
+                            "client_x509_cert_url": st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL", ""),
+                            "universe_domain": st.secrets.get("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
+                        }
+                        
+                        cred = credentials.Certificate(cred_dict)
+                        firebase_admin.initialize_app(cred, {
+                            'storageBucket': f"{cred_dict['project_id']}.appspot.com"
+                        })
+                    else:
+                        # Intentar usar firebase_credentials como JSON
+                        if "FIREBASE_CREDENTIALS" in st.secrets:
+                            json_str = st.secrets["FIREBASE_CREDENTIALS"]
+                            # Asegurarse de que es un diccionario
+                            if isinstance(json_str, dict):
+                                cred_dict = json_str
+                            else:
+                                cred_dict = json.loads(json_str)
+                            
+                            cred = credentials.Certificate(cred_dict)
+                            firebase_admin.initialize_app(cred, {
+                                'storageBucket': f"{cred_dict['project_id']}.appspot.com"
+                            })
+                        else:
+                            # Último intento - usando firebase como clave
+                            if "firebase" in st.secrets:
+                                firebase_dict = st.secrets["firebase"]
+                                if isinstance(firebase_dict, dict):
+                                    cred = credentials.Certificate(firebase_dict)
+                                else:
+                                    cred_dict = json.loads(firebase_dict)
+                                    cred = credentials.Certificate(cred_dict)
+                                
+                                project_id = cred_dict.get('project_id', '')
+                                firebase_admin.initialize_app(cred, {
+                                    'storageBucket': f"{project_id}.appspot.com"
+                                })
+                            else:
+                                raise ValueError("No se encontraron credenciales de Firebase en los secretos")
+                except Exception as e:
+                    st.error(f"Error al configurar Firebase: {str(e)}")
+                    return None
+            
             # Crear un diccionario con las referencias necesarias
             db = firestore.client()
             bucket = storage.bucket()
@@ -81,18 +110,11 @@ def inicializar_firebase():
             return None
     
     # Si ya está inicializado, devolver las referencias
-    return {"db": firestore.client(), "bucket": storage.bucket()}
-    
-    # Si ya está inicializado, devolver las referencias
     try:
         return {"db": firestore.client(), "bucket": storage.bucket()}
     except Exception as e:
         st.error(f"Error al obtener las referencias de Firebase: {str(e)}")
         return None
-    
-    # Si ya está inicializado, devolver las referencias
-    return {"db": firestore.client(), "bucket": storage.bucket()}
-
 # Inicializar Firestore
 firebase_refs = inicializar_firebase()
 conexion_exitosa = firebase_refs is not None
