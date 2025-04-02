@@ -15,94 +15,118 @@ import io
 st.set_page_config(page_title="Gestor de Clientes Empresa Viva", page_icon="🏢", layout="wide")
 
 # Función para inicializar Firebase de forma segura
+# Reemplaza la función inicializar_firebase con esta versión corregida
+
 @st.cache_resource
 def inicializar_firebase():
     if not firebase_admin._apps:
         try:
             # Detectar entorno (desarrollo local o Streamlit Cloud)
             if os.path.exists(".streamlit/secrets.toml"):
-                st.write("🔑 Usando credenciales locales")
                 # Entorno de desarrollo local con .streamlit/secrets.toml
                 try:
                     # Obtener credenciales de st.secrets
                     firebase_secrets = st.secrets["firebase"]
                     
+                    # Asegurarnos de que firebase_secrets es un diccionario
+                    if isinstance(firebase_secrets, dict):
+                        cred_dict = firebase_secrets
+                    else:
+                        # Si es una cadena JSON, convertirla a diccionario
+                        cred_dict = json.loads(firebase_secrets)
+                    
                     # Crear el objeto de credenciales
-                    cred_dict = firebase_secrets
                     cred = credentials.Certificate(cred_dict)
                     
                     # Obtener el proyecto de Firebase desde las credenciales
-                    project_id = cred_dict['project_id']
+                    project_id = cred_dict.get('project_id')
                     
                     # Inicializar la aplicación de Firebase con Storage
                     firebase_admin.initialize_app(cred, {
                         'storageBucket': f"{project_id}.appspot.com"
                     })
                 except Exception as e:
-                    st.error(f"Error con credenciales locales: {e}")
+                    st.error(f"Error con credenciales locales: {str(e)}")
                     return None
             else:
                 # Entorno de Streamlit Cloud
-                st.write("☁️ Usando credenciales de Streamlit Cloud")
-                
-                # Verificar si están disponibles las variables de entorno individuales
-                if all(key in st.secrets.keys() for key in [
-                    "FIREBASE_TYPE", "FIREBASE_PROJECT_ID", "FIREBASE_PRIVATE_KEY_ID",
-                    "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL"
-                ]):
-                    # Crear diccionario de credenciales desde variables individuales
-                    cred_dict = {
-                        "type": st.secrets["FIREBASE_TYPE"],
-                        "project_id": st.secrets["FIREBASE_PROJECT_ID"],
-                        "private_key_id": st.secrets["FIREBASE_PRIVATE_KEY_ID"],
-                        "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
-                        "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
-                        "client_id": st.secrets["FIREBASE_CLIENT_ID"],
-                        "auth_uri": st.secrets["FIREBASE_AUTH_URI"],
-                        "token_uri": st.secrets["FIREBASE_TOKEN_URI"],
-                        "auth_provider_x509_cert_url": st.secrets["FIREBASE_AUTH_PROVIDER_X509_CERT_URL"],
-                        "client_x509_cert_url": st.secrets["FIREBASE_CLIENT_X509_CERT_URL"],
-                        "universe_domain": st.secrets["FIREBASE_UNIVERSE_DOMAIN"]
-                    }
-                    
-                    cred = credentials.Certificate(cred_dict)
-                    firebase_admin.initialize_app(cred, {
-                        'storageBucket': f"{cred_dict['project_id']}.appspot.com"
-                    })
-                else:
-                    # Intentar usar firebase_credentials como JSON
-                    try:
-                        json_str = st.secrets["FIREBASE_CREDENTIALS"]
-                        cred_dict = json.loads(json_str)
+                try:
+                    # Verificar si están disponibles las variables de entorno individuales
+                    if all(key in st.secrets.keys() for key in [
+                        "FIREBASE_TYPE", "FIREBASE_PROJECT_ID", "FIREBASE_PRIVATE_KEY_ID",
+                        "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL"
+                    ]):
+                        # Crear diccionario de credenciales desde variables individuales
+                        cred_dict = {
+                            "type": st.secrets["FIREBASE_TYPE"],
+                            "project_id": st.secrets["FIREBASE_PROJECT_ID"],
+                            "private_key_id": st.secrets["FIREBASE_PRIVATE_KEY_ID"],
+                            "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
+                            "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
+                            "client_id": st.secrets.get("FIREBASE_CLIENT_ID", ""),
+                            "auth_uri": st.secrets.get("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
+                            "token_uri": st.secrets.get("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+                            "auth_provider_x509_cert_url": st.secrets.get("FIREBASE_AUTH_PROVIDER_X509_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
+                            "client_x509_cert_url": st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL", ""),
+                            "universe_domain": st.secrets.get("FIREBASE_UNIVERSE_DOMAIN", "googleapis.com")
+                        }
+                        
+                        # Verificar que todos los valores requeridos estén presentes
+                        if not all(key in cred_dict and cred_dict[key] for key in ["type", "project_id", "private_key_id", "private_key", "client_email"]):
+                            raise ValueError("Faltan campos requeridos en las credenciales de Firebase")
+                        
                         cred = credentials.Certificate(cred_dict)
                         firebase_admin.initialize_app(cred, {
                             'storageBucket': f"{cred_dict['project_id']}.appspot.com"
                         })
-                    except Exception as e:
-                        st.error(f"Error con credenciales JSON: {e}")
-                        
-                        # Último intento - usando firebase como clave
-                        try:
-                            firebase_dict = st.secrets["firebase"]
-                            if isinstance(firebase_dict, dict):
-                                cred = credentials.Certificate(firebase_dict)
+                    else:
+                        # Intentar usar firebase_credentials como JSON
+                        if "FIREBASE_CREDENTIALS" in st.secrets:
+                            json_str = st.secrets["FIREBASE_CREDENTIALS"]
+                            # Asegurarse de que es un diccionario
+                            if isinstance(json_str, dict):
+                                cred_dict = json_str
                             else:
-                                cred_dict = json.loads(firebase_dict)
-                                cred = credentials.Certificate(cred_dict)
+                                cred_dict = json.loads(json_str)
+                            
+                            cred = credentials.Certificate(cred_dict)
                             firebase_admin.initialize_app(cred, {
                                 'storageBucket': f"{cred_dict['project_id']}.appspot.com"
                             })
-                        except Exception as e2:
-                            st.error(f"Error en último intento: {e2}")
-                            return None
+                        else:
+                            # Último intento - usando firebase como clave
+                            if "firebase" in st.secrets:
+                                firebase_dict = st.secrets["firebase"]
+                                if isinstance(firebase_dict, dict):
+                                    cred = credentials.Certificate(firebase_dict)
+                                else:
+                                    cred_dict = json.loads(firebase_dict)
+                                    cred = credentials.Certificate(cred_dict)
+                                
+                                project_id = cred_dict.get('project_id', '')
+                                firebase_admin.initialize_app(cred, {
+                                    'storageBucket': f"{project_id}.appspot.com"
+                                })
+                            else:
+                                raise ValueError("No se encontraron credenciales de Firebase en los secretos")
+                except Exception as e:
+                    st.error(f"Error al configurar Firebase: {str(e)}")
+                    return None
             
             # Crear un diccionario con las referencias necesarias
             db = firestore.client()
             bucket = storage.bucket()
             return {"db": db, "bucket": bucket}
         except Exception as e:
-            st.error(f"Error al inicializar Firebase: {e}")
+            st.error(f"Error al inicializar Firebase: {str(e)}")
             return None
+    
+    # Si ya está inicializado, devolver las referencias
+    try:
+        return {"db": firestore.client(), "bucket": storage.bucket()}
+    except Exception as e:
+        st.error(f"Error al obtener las referencias de Firebase: {str(e)}")
+        return None
     
     # Si ya está inicializado, devolver las referencias
     return {"db": firestore.client(), "bucket": storage.bucket()}
