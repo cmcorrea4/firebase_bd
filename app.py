@@ -12,7 +12,7 @@ import uuid
 import io
 
 # Configuración de la página
-st.set_page_config(page_title="Gestor de Clientes Empresa Viva", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="Gestor de Clientes", page_icon="🏢", layout="wide")
 
 
 # Función auxiliar para convertir AttrDict a diccionario estándar
@@ -162,7 +162,7 @@ else:
 st.empty()
 
 # Título de la aplicación
-st.title("📓 Gestor de Clientes con Empresa Viva")
+st.title("📓 Gestor de Clientes: EV")
 
 # Función para obtener todos los clientes
 def obtener_clientes():
